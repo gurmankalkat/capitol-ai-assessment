@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Header } from "@/components/dashboard/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { DocumentCard } from "@/components/dashboard/DocumentCard";
@@ -6,6 +6,7 @@ import { EmbeddingVisualizer } from "@/components/dashboard/EmbeddingVisualizer"
 import { ApiDocumentation } from "@/components/dashboard/ApiDocumentation";
 import { PipelineStatus } from "@/components/dashboard/PipelineStatus";
 import { useDocuments } from "@/hooks/useDocuments";
+import { QdrantDocument, PipelineStats } from "@/types/document";
 import { 
   FileText, 
   Cpu, 
@@ -15,17 +16,143 @@ import {
   Search,
   Filter,
   Grid3X3,
-  List
+  List,
+  Upload,
+  FileJson,
+  Download,
+  AlertTriangle
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+
+const DEFAULT_EMBEDDING_DIMENSION = 32;
+
+const toStringArray = (value: unknown): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  return [String(value)];
+};
+
+const normalizeDate = (value: unknown) => {
+  if (!value) return new Date().toISOString();
+  const date = new Date(value as string);
+  return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+};
+
+const computeStats = (docs: QdrantDocument[]): PipelineStats | null => {
+  if (docs.length === 0) return null;
+
+  const embeddingDim = docs[0]?.embedding?.length || 0;
+  const magnitudes = docs.map(doc => {
+    const sum = doc.embedding.reduce((acc, val) => acc + val * val, 0);
+    return Math.sqrt(sum);
+  });
+  const avgMagnitude = magnitudes.reduce((a, b) => a + b, 0) / magnitudes.length;
+
+  const websites = new Set(docs.map(d => d.metadata.website));
+  const allSections = docs.flatMap(d => d.metadata.sections);
+  const uniqueSections = [...new Set(allSections)];
+
+  const dates = docs
+    .map(d => new Date(d.metadata.publish_date))
+    .filter(d => !isNaN(d.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  return {
+    totalDocuments: docs.length,
+    processedDocuments: docs.length,
+    embeddingDimension: embeddingDim,
+    avgEmbeddingMagnitude: avgMagnitude,
+    uniqueWebsites: websites.size,
+    uniqueSections,
+    dateRange: {
+      earliest: dates[0]?.toISOString().split('T')[0] || 'N/A',
+      latest: dates[dates.length - 1]?.toISOString().split('T')[0] || 'N/A',
+    },
+  };
+};
+
+const cmsRecordToQdrant = (item: Record<string, unknown>, index: number): QdrantDocument => {
+  if (item && typeof item === 'object' && 'metadata' in item && 'embedding' in item) {
+    return item as QdrantDocument;
+  }
+
+  const text = String(
+    (item as any)?.text ||
+    (item as any)?.body ||
+    (item as any)?.content ||
+    (item as any)?.summary ||
+    ''
+  ) || 'No content provided';
+
+  const published =
+    (item as any)?.publish_date ||
+    (item as any)?.published_at ||
+    (item as any)?.datetime ||
+    (item as any)?.created_at ||
+    (item as any)?.updated_at;
+
+  const title =
+    (item as any)?.title ||
+    (item as any)?.headline ||
+    (item as any)?.name ||
+    'Untitled';
+
+  const embeddingCandidate = (item as any)?.embedding || (item as any)?.vector;
+  const embedding =
+    Array.isArray(embeddingCandidate) && embeddingCandidate.every((val) => typeof val === 'number')
+      ? embeddingCandidate
+      : Array(DEFAULT_EMBEDDING_DIMENSION).fill(0);
+
+  return {
+    text,
+    metadata: {
+      title,
+      url: (item as any)?.url || (item as any)?.link || '#',
+      external_id:
+        (item as any)?.external_id ||
+        (item as any)?.id ||
+        (item as any)?.slug ||
+        (item as any)?.uuid ||
+        `cms-${index}`,
+      publish_date: normalizeDate(published),
+      datetime: normalizeDate(published),
+      first_publish_date: normalizeDate(
+        (item as any)?.first_publish_date || published
+      ),
+      website: (item as any)?.website || (item as any)?.site || (item as any)?.source || 'cms',
+      sections: toStringArray(
+        (item as any)?.sections ||
+        (item as any)?.section ||
+        (item as any)?.category ||
+        (item as any)?.categories
+      ),
+      categories: toStringArray((item as any)?.categories || (item as any)?.category),
+      tags: toStringArray((item as any)?.tags || (item as any)?.keywords || (item as any)?.labels),
+      thumb: (item as any)?.thumb || (item as any)?.thumbnail || (item as any)?.image || (item as any)?.featured_image || '',
+    },
+    embedding,
+  };
+};
 
 const Index = () => {
   const { documents, loading, error, stats } = useDocuments();
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
+  const [uploadedDocuments, setUploadedDocuments] = useState<QdrantDocument[]>([]);
+  const [convertedJson, setConvertedJson] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<'idle' | 'processing' | 'ready'>('idle');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
 
-  const filteredDocuments = documents.filter(doc => {
+  const activeDocuments = uploadedDocuments.length ? uploadedDocuments : documents;
+  const activeStats = useMemo(() => {
+    if (uploadedDocuments.length) return computeStats(uploadedDocuments);
+    return stats;
+  }, [uploadedDocuments, stats]);
+  const showLoading = loading && uploadedDocuments.length === 0;
+
+  const filteredDocuments = activeDocuments.filter(doc => {
     const matchesSearch = searchQuery === "" || 
       doc.metadata.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.text.toLowerCase().includes(searchQuery.toLowerCase());
@@ -33,7 +160,50 @@ const Index = () => {
     return matchesSearch && matchesSection;
   });
 
-  if (error) {
+  const handleCmsUpload = async (file: File) => {
+    try {
+      setUploadError(null);
+      setUploadStatus('processing');
+      setUploadedFileName(file.name);
+
+      const raw = await file.text();
+      const parsed = JSON.parse(raw);
+      const items = Array.isArray(parsed)
+        ? parsed
+        : parsed.items || parsed.data || parsed.results || parsed.documents;
+
+      if (!Array.isArray(items)) {
+        throw new Error('Expected an array of CMS records or a top-level "items"/"data" array.');
+      }
+
+      const converted = items.map((item, index) => cmsRecordToQdrant(item as Record<string, unknown>, index));
+      setUploadedDocuments(converted);
+      setConvertedJson(JSON.stringify(converted, null, 2));
+      setSelectedSection(null);
+      setSearchQuery("");
+      setUploadStatus('ready');
+    } catch (err) {
+      setUploadStatus('idle');
+      setUploadedDocuments([]);
+      setConvertedJson(null);
+      setUploadError(err instanceof Error ? err.message : 'Unable to parse file. Please upload valid JSON.');
+    }
+  };
+
+  const handleDownload = () => {
+    if (!convertedJson) return;
+    const blob = new Blob([convertedJson], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = uploadedFileName
+      ? uploadedFileName.replace(/\.json$/i, "") + "_qdrant.json"
+      : "qdrant_documents.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (error && uploadedDocuments.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -69,35 +239,158 @@ const Index = () => {
           </div>
         </section>
 
+        {/* CMS Upload & Conversion */}
+        <section className="mb-10 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 rounded-2xl border border-border bg-card p-6">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                    <FileJson className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-foreground">CMS → Qdrant Converter</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Upload a CMS API JSON export and we will normalize it into Qdrant-ready documents.
+                    </p>
+                  </div>
+                </div>
+                <label className="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:border-primary hover:text-primary transition-colors">
+                  <Upload className="h-4 w-4" />
+                  <span>{uploadStatus === 'processing' ? 'Processing...' : 'Upload JSON'}</span>
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        handleCmsUpload(file);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+
+              {uploadError && (
+                <div className="flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                  <AlertTriangle className="h-4 w-4 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Upload failed</p>
+                    <p className="text-xs text-destructive/90">{uploadError}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Status</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {uploadStatus === 'processing'
+                      ? 'Parsing CMS file...'
+                      : uploadStatus === 'ready'
+                        ? 'Ready to download'
+                        : 'Waiting for upload'}
+                  </p>
+                  {uploadedFileName && (
+                    <p className="text-[10px] text-muted-foreground mt-1 font-mono truncate">
+                      {uploadedFileName}
+                    </p>
+                  )}
+                </div>
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Converted Docs</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {uploadedDocuments.length || '—'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Using {uploadedDocuments.length ? 'uploaded data' : 'sample dataset'}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="text-xs text-muted-foreground mb-1">Embedding Dimensions</p>
+                  <p className="text-sm font-semibold text-foreground">
+                    {uploadedDocuments.length
+                      ? uploadedDocuments[0]?.embedding.length
+                      : stats?.embeddingDimension || '—'}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">
+                    Defaults to {DEFAULT_EMBEDDING_DIMENSION} if none provided
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">
+                  Expecting an array at the root (or under <code>items</code>/<code>data</code>) with keys like <code>id</code>, <code>title</code>, <code>content</code>, <code>published_at</code>, <code>tags</code>.
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownload}
+                    disabled={!convertedJson}
+                    className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primary/90 transition-colors"
+                  >
+                    <Download className="h-4 w-4" />
+                    Download Qdrant JSON
+                  </button>
+                  {convertedJson && (
+                    <Badge variant="success" className="text-xs">
+                      {uploadedDocuments.length} docs ready
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Filter className="h-5 w-5 text-primary" />
+              <h4 className="font-semibold text-foreground">What gets mapped</h4>
+            </div>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li><span className="font-medium text-foreground">content</span> → <code>text</code></li>
+              <li><span className="font-medium text-foreground">title/url/id</span> → <code>metadata</code></li>
+              <li><span className="font-medium text-foreground">sections/categories/tags</span> → arrays</li>
+              <li><span className="font-medium text-foreground">publish date</span> → ISO timestamps</li>
+              <li><span className="font-medium text-foreground">embedding/vector</span> (if present) else {DEFAULT_EMBEDDING_DIMENSION}-D zeros</li>
+            </ul>
+            <p className="text-xs text-muted-foreground">
+              Converted documents immediately drive the dashboard visualizations and filters.
+            </p>
+          </div>
+        </section>
+
         {/* Stats Grid */}
-        {stats && (
+        {activeStats && (
           <section className="mb-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <StatsCard
               title="Total Documents"
-              value={stats.totalDocuments}
+              value={activeStats.totalDocuments}
               icon={FileText}
               description="Processed and indexed"
               delay={0}
             />
             <StatsCard
               title="Embedding Dimensions"
-              value={stats.embeddingDimension}
+              value={activeStats.embeddingDimension}
               icon={Cpu}
               description="Vector size per document"
               delay={100}
             />
             <StatsCard
               title="Unique Sections"
-              value={stats.uniqueSections.length}
+              value={activeStats.uniqueSections.length}
               icon={Layers}
               description="Content categories"
               delay={200}
             />
             <StatsCard
               title="Data Sources"
-              value={stats.uniqueWebsites}
+              value={activeStats.uniqueWebsites}
               icon={Globe}
-              description={`${stats.dateRange.earliest} → ${stats.dateRange.latest}`}
+              description={`${activeStats.dateRange.earliest} → ${activeStats.dateRange.latest}`}
               delay={300}
             />
           </section>
@@ -107,68 +400,15 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
           <div className="lg:col-span-2 space-y-6">
             {/* Embedding visualizer */}
-            <EmbeddingVisualizer documents={documents} />
-            
-            {/* API Documentation */}
-            <ApiDocumentation />
+            <EmbeddingVisualizer documents={activeDocuments} />
           </div>
           
           <div className="space-y-6">
             {/* Pipeline Status */}
             <PipelineStatus 
-              processedCount={stats?.processedDocuments || 0} 
-              totalCount={stats?.totalDocuments || 0} 
+              processedCount={activeStats?.processedDocuments || 0} 
+              totalCount={activeStats?.totalDocuments || 0} 
             />
-
-            {/* Quick filters */}
-            <div className="rounded-xl border border-border bg-card p-6">
-              <h3 className="font-semibold text-foreground mb-4">Quick Filters</h3>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setSelectedSection(null)}
-                  className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                    !selectedSection 
-                      ? 'bg-primary text-primary-foreground' 
-                      : 'bg-muted text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  All
-                </button>
-                {stats?.uniqueSections.slice(0, 8).map(section => (
-                  <button
-                    key={section}
-                    onClick={() => setSelectedSection(section)}
-                    className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
-                      selectedSection === section 
-                        ? 'bg-primary text-primary-foreground' 
-                        : 'bg-muted text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {section}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Date range info */}
-            {stats && (
-              <div className="rounded-xl border border-border bg-card p-6">
-                <div className="flex items-center gap-2 mb-3">
-                  <Calendar className="h-4 w-4 text-primary" />
-                  <h3 className="font-semibold text-foreground">Date Range</h3>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Earliest</span>
-                    <span className="font-mono text-foreground">{stats.dateRange.earliest}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Latest</span>
-                    <span className="font-mono text-foreground">{stats.dateRange.latest}</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -178,7 +418,7 @@ const Index = () => {
             <div>
               <h2 className="text-xl font-semibold text-foreground">Indexed Documents</h2>
               <p className="text-sm text-muted-foreground">
-                {filteredDocuments.length} of {documents.length} documents
+                {filteredDocuments.length} of {activeDocuments.length} documents
               </p>
             </div>
             
@@ -221,7 +461,7 @@ const Index = () => {
             </div>
           </div>
 
-          {loading ? (
+          {showLoading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {[...Array(6)].map((_, i) => (
                 <div key={i} className="h-64 rounded-xl bg-muted animate-pulse" />
