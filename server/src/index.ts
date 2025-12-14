@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import cors from 'cors';
 import express from 'express';
+import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -110,6 +111,20 @@ app.post('/api/pipeline', async (req, res) => {
     res.status(500).json({ error: error?.message || 'Pipeline failed' });
   }
 });
+
+const clientDistPath = path.resolve(process.cwd(), '..', 'dist');
+const clientIndexPath = path.join(clientDistPath, 'index.html');
+const serveClient = process.env.SERVE_CLIENT !== 'false' && fsSync.existsSync(clientIndexPath);
+
+if (serveClient) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(clientIndexPath);
+  });
+} else {
+  console.warn('Client build not found; serving API only');
+}
 
 app.listen(port, '0.0.0.0', () => {
   console.log(`API server listening on http://0.0.0.0:${port}`);

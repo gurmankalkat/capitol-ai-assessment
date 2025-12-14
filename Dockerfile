@@ -1,6 +1,16 @@
-# Multi-stage build for the API + Python embedding pipeline
+# Multi-stage build for the frontend + API + Python embedding pipeline
 
-# Build stage: compile TypeScript to dist
+# Build the React frontend
+FROM node:20-slim AS frontend-builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY index.html tsconfig*.json vite.config.ts postcss.config.js tailwind.config.ts components.json ./
+COPY public ./public
+COPY src ./src
+RUN npm run build
+
+# Build the API (TypeScript -> dist)
 FROM node:20-slim AS builder
 WORKDIR /app/server
 COPY server/package*.json server/tsconfig*.json ./
@@ -21,8 +31,9 @@ RUN python3 -m venv /app/.venv && /app/.venv/bin/pip install -r /app/server/src/
 COPY server/package*.json ./
 RUN npm ci --omit=dev
 
-# Copy built server and pipeline script
+# Copy built artifacts
 COPY --from=builder /app/server/dist ./dist
+COPY --from=frontend-builder /app/dist /app/dist
 COPY server/src/pipeline.py ./src/pipeline.py
 
 ENV NODE_ENV=production \
