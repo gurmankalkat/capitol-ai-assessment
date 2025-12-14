@@ -1,73 +1,120 @@
-# Welcome to your Lovable project
+# Capitol AI Assessment
 
 ## Project info
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+**Deployed**: https://capitol-ai-assessment.onrender.com/
 
-## How can I edit this code?
+## Prerequisites
+- Node.js 20+ and npm
+- Python 3.10+ (for running `server/src/pipeline.py`)
+- Git (to clone the repo)
+- OpenAI API key (if you want OpenAI embeddings)
+- Qdrant URL/API key (optional; only if you want to push vectors to Qdrant)
 
-There are several ways of editing your application.
+## Setup & Installation 
 
-**Use Lovable**
+### Option 1 
+Run `server/src/pipeline.py` independently to transform documents and optionally upload them to Qdrant.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
+**Setup**
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+# Clone the repo and enter it
+git clone <your_repo_url>
+cd capitol-ai-assessment
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Create your local env file
+cp server/.env.example server/.env
+# Open server/.env and fill in your keys (OPENAI_API_KEY, QDRANT_URL, QDRANT_API_KEY)
 
-# Step 3: Install the necessary dependencies.
-npm i
+# Set up 
+cd server/src
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+# Run transformation
+# OpenAI embeddings 
+python pipeline.py --input path/to/raw.json --output output/qdrant_documents.json --provider openai --openai-model text-embedding-3-small
+
+# Skip embeddings entirely
+python pipeline.py --input path/to/raw.json --output output/qdrant_documents.json --skip-embeddings
+
+# Limit number of documents processed
+python pipeline.py --input path/to/raw.json --output output/qdrant_documents.json --limit 10
 ```
+**Configuration Details**
+- Copy `server/.env.example` to `server/.env` after cloning.
+- Fill in your own `OPENAI_API_KEY`, `QDRANT_URL`, and `QDRANT_API_KEY` (or leave Qdrant values empty to skip upload).
 
-**Edit a file directly in GitHub**
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Option 2
+A fully deployed live web application that lets users upload CMS documents and convert them into Qdrant-formatted JSON through a browser-based interface.
 
-**Use GitHub Codespaces**
+**Use Web Application**
+1. Open https://capitol-ai-assessment.onrender.com/
+2. Drag and drop your file into the **“CMS → Qdrant Converter”** box, or click **“Browse Files”** to upload it
+3. Once processing is complete, download the converted JSON output
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+**Infrastructure details**
+- Hosted on Render using `Dockerfile` 
+- Node/Express API listens on `PORT` (default 4000) and serves the built React app plus the `/api/pipeline` endpoint
+- Python virtualenv is created inside the container to run `server/src/pipeline.py` 
 
-## What technologies are used for this project?
+## Technologies Used
 
-This project is built with:
-
+Frontend is built with:
 - Vite
 - TypeScript
 - React
 - shadcn-ui
 - Tailwind CSS
 
-## How can I deploy this project?
+Backend is built with:
+- Node.js + Express
+- TypeScript
+- Python 3 (for the `pipeline.py` embedding/transformation script)
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+## Known Limitations
+- In-memory cache only: the `documents` array resets on restart (Qdrant vectors persist, but the API doesn’t reload them)
+- HTML stripping is basic: nested/complex tags may lose structure
+- No handling for very long documents (>10K tokens) beyond embedding provider limits
+- Large batches (1000+ docs) may need memory/throughput tuning or chunking
+- No authentication/authorization on API or UI
+- No automated tests or CI included
 
-## Can I connect a custom domain to my Lovable project?
+## Future Improvements
+- Add auth and rate limiting to API endpoints
+- Provide structured logging and better error reporting for pipeline runs
+- Add unit/integration tests and CI workflow
+- Add configurable retries/backoff for OpenAI/Qdrant calls
+- Expose a background job/queue for large uploads and progress tracking
 
-Yes, you can!
+## Design Decisions
+- **Text extraction:** Concatenate text content blocks and strip HTML tags for clean embeddings; trade-off: formatting/structure is lost for nested or rich markup
+- **In-memory cache on API:** API retains the last transformed docs for quick fetch; trade-off: state resets on restart and does not auto-sync with Qdrant
+- **Single container deploy:** Dockerfile builds the Vite frontend and serves it from Express for a single Render service; trade-off: frontend and API share a release cycle and image size increases
+- **Environment-driven behavior:** Embedding provider, skip/limit toggles, and Qdrant upload are controlled via env vars for flexibility; trade-off: misconfigured envs can cause silent skips or failures
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## API Documentation
+- **GET `/health`**  
+  - Purpose: liveness check.  
+  - Response: `200 OK` → `{ "status": "ok" }`
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- **GET `/api/documents`**  
+  - Purpose: fetch the last transformed documents held in memory.  
+  - Response: `200 OK` → array of documents.
+
+- **POST `/api/documents`**  
+  - Purpose: replace the in-memory documents with your payload.  
+  - Body: JSON array of documents `{ text, embedding?, metadata }`.  
+  - Responses: `201 Created` → `{ stored: <count> }`; `400` if body is not an array.
+  - Note: UI reads via `GET /api/documents`; it does not call this endpoint. 
+
+- **POST `/api/pipeline`**  
+  - Purpose: run `pipeline.py` on an array of CMS documents, optionally generating embeddings and uploading to Qdrant.  
+  - Body: JSON array of raw CMS documents.  
+  - Env-driven behavior:
+    - `PIPELINE_SKIP_EMBEDDINGS=false` → generate embeddings; otherwise skip.
+    - `PIPELINE_PROVIDER=openai|sentence-transformers` → choose embedding backend.
+    - `QDRANT_URL`, `QDRANT_API_KEY` → if set, upload vectors to Qdrant; otherwise skip upload.  
+  - Responses: `201 Created` → `{ stored, outputPath, message, documents }`; `400` if body is not an array; `500` on pipeline failure.
