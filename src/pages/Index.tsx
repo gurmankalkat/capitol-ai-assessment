@@ -15,7 +15,10 @@ import {
   Upload,
   FileJson,
   Download,
-  AlertTriangle
+  AlertTriangle,
+  Code,
+  Copy,
+  Check
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -147,6 +150,7 @@ const Index = () => {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'processing' | 'ready'>('idle');
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const activeDocuments = uploadedDocuments.length ? uploadedDocuments : documents;
   const activeStats = useMemo(() => {
@@ -230,6 +234,24 @@ const Index = () => {
       setUploadError("Please drop a valid JSON file.");
     }
   };
+
+  const handleCopyJson = async () => {
+    if (!convertedJson) return;
+    await navigator.clipboard.writeText(convertedJson);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Generate preview JSON (first 2 docs, truncated embeddings)
+  const previewJson = useMemo(() => {
+    if (uploadedDocuments.length === 0) return null;
+    const preview = uploadedDocuments.slice(0, 2).map(doc => ({
+      ...doc,
+      text: doc.text.length > 150 ? doc.text.slice(0, 150) + "..." : doc.text,
+      embedding: [...doc.embedding.slice(0, 4), "...", doc.embedding.slice(-2)]
+    }));
+    return JSON.stringify(preview, null, 2);
+  }, [uploadedDocuments]);
 
   if (error && uploadedDocuments.length === 0) {
     return (
@@ -387,6 +409,40 @@ const Index = () => {
                   )}
                 </div>
               </div>
+
+              {/* JSON Preview Panel */}
+              {previewJson && (
+                <div className="mt-4 rounded-lg border border-border bg-muted/30 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/50">
+                    <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <Code className="h-4 w-4 text-primary" />
+                      Output Preview
+                      <span className="text-xs text-muted-foreground font-normal">
+                        (showing {Math.min(2, uploadedDocuments.length)} of {uploadedDocuments.length} docs)
+                      </span>
+                    </div>
+                    <button
+                      onClick={handleCopyJson}
+                      className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted"
+                    >
+                      {copied ? (
+                        <>
+                          <Check className="h-3 w-3 text-green-500" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          Copy All
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  <pre className="p-4 text-xs font-mono text-muted-foreground overflow-x-auto max-h-64 overflow-y-auto">
+                    <code>{previewJson}</code>
+                  </pre>
+                </div>
+              )}
             </div>
           </div>
         </section>
