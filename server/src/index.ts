@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 
 type QdrantDocument = {
   text: string;
@@ -64,6 +65,59 @@ app.post('/api/documents', (req, res) => {
   }
   documents = req.body as QdrantDocument[];
   res.status(201).json({ stored: documents.length });
+});
+
+async function runPythonPipeline(payload: unknown[]) {
+  const tmpDir = path.resolve(process.cwd(), 'tmp');
+  await fs.mkdir(tmpDir, { recursive: true });
+
+  const inputPath = path.join(tmpDir, `input-${Date.now()}.json`);
+  const outputPath = path.join(tmpDir, `qdrant-${Date.now()}.json`);
+  const pipelinePath =
+    process.env.PIPELINE_PATH ||
+    path.resolve(process.cwd(), 'src', 'pipeline.py');
+
+  await fs.writeFile(inputPath, JSON.stringify(payload, null, 2), 'utf8');
+
+  const args = [
+    pipelinePath,
+    '--input',
+    inputPath,
+    '--output',
+    outputPath,
+    process.env.PIPELINE_SKIP_EMBEDDINGS === 'false' ? '' : '--skip-embeddings',
+  ].filter(Boolean);
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('python3', args, { stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`pipeline.py exited with code ${code}`));
+    });
+  });
+
+  const transformedRaw = await fs.readFile(outputPath, 'utf8');
+  const transformedDocs = JSON.parse(transformedRaw) as QdrantDocument[];
+  return { transformedDocs, outputPath };
+}
+
+app.post('/api/pipeline', async (req, res) => {
+  if (!Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'Expected an array of CMS documents' });
+  }
+  try {
+    const { transformedDocs, outputPath } = await runPythonPipeline(req.body);
+    documents = transformedDocs;
+    res.status(201).json({
+      stored: documents.length,
+      outputPath,
+      message: 'Pipeline completed',
+    });
+  } catch (error: any) {
+    console.error('Pipeline error', error);
+    res.status(500).json({ error: error?.message || 'Pipeline failed' });
+  }
 });
 
 app.listen(port, () => {
