@@ -240,8 +240,8 @@ const Index = () => {
         </section>
 
         {/* CMS Upload & Conversion */}
-        <section className="mb-10 grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 rounded-2xl border border-border bg-card p-6">
+        <section className="mb-10">
+          <div className="rounded-2xl border border-border bg-card p-6 min-h-[65vh]">
             <div className="flex flex-col gap-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -343,23 +343,6 @@ const Index = () => {
               </div>
             </div>
           </div>
-
-          <div className="rounded-2xl border border-border bg-card p-6 space-y-4">
-            <div className="flex items-center gap-2">
-              <Filter className="h-5 w-5 text-primary" />
-              <h4 className="font-semibold text-foreground">What gets mapped</h4>
-            </div>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><span className="font-medium text-foreground">content</span> → <code>text</code></li>
-              <li><span className="font-medium text-foreground">title/url/id</span> → <code>metadata</code></li>
-              <li><span className="font-medium text-foreground">sections/categories/tags</span> → arrays</li>
-              <li><span className="font-medium text-foreground">publish date</span> → ISO timestamps</li>
-              <li><span className="font-medium text-foreground">embedding/vector</span> (if present) else {DEFAULT_EMBEDDING_DIMENSION}-D zeros</li>
-            </ul>
-            <p className="text-xs text-muted-foreground">
-              Converted documents immediately drive the dashboard visualizations and filters.
-            </p>
-          </div>
         </section>
 
         {/* Stats Grid */}
@@ -380,13 +363,6 @@ const Index = () => {
               delay={100}
             />
             <StatsCard
-              title="Unique Sections"
-              value={activeStats.uniqueSections.length}
-              icon={Layers}
-              description="Content categories"
-              delay={200}
-            />
-            <StatsCard
               title="Data Sources"
               value={activeStats.uniqueWebsites}
               icon={Globe}
@@ -401,14 +377,6 @@ const Index = () => {
           <div className="lg:col-span-2 space-y-6">
             {/* Embedding visualizer */}
             <EmbeddingVisualizer documents={activeDocuments} />
-          </div>
-          
-          <div className="space-y-6">
-            {/* Pipeline Status */}
-            <PipelineStatus 
-              processedCount={activeStats?.processedDocuments || 0} 
-              totalCount={activeStats?.totalDocuments || 0} 
-            />
           </div>
         </div>
 

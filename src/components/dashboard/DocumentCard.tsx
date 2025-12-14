@@ -40,7 +40,6 @@ export function DocumentCard({ document, index }: DocumentCardProps) {
           <div className="absolute inset-0 bg-gradient-to-t from-card via-transparent to-transparent" />
         </div>
       )}
-
       <div className="p-5">
         {/* Title */}
         <h3 className="mb-2 line-clamp-2 font-semibold text-foreground transition-colors group-hover:text-primary">
@@ -53,35 +52,13 @@ export function DocumentCard({ document, index }: DocumentCardProps) {
             <Calendar className="h-3 w-3" />
             {formattedDate}
           </span>
-          <span className="flex items-center gap-1">
-            <Layers className="h-3 w-3" />
-            {embedding.length}D
-          </span>
-          <Badge variant="info" className="text-[10px]">
-            {metadata.website}
-          </Badge>
         </div>
 
         {/* Text preview */}
         <p className="mb-4 text-sm text-muted-foreground line-clamp-3 font-mono text-xs leading-relaxed">
           {truncatedText}
         </p>
-
-        {/* Sections & Tags */}
-        <div className="mb-4 flex flex-wrap gap-1.5">
-          {metadata.sections.slice(0, 3).map((section) => (
-            <Badge key={section} variant="secondary" className="text-[10px]">
-              {section}
-            </Badge>
-          ))}
-          {metadata.tags.slice(0, 2).map((tag) => (
-            <Badge key={tag} variant="outline" className="text-[10px]">
-              <Tag className="mr-1 h-2 w-2" />
-              {tag}
-            </Badge>
-          ))}
-        </div>
-
+        
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-border pt-3">
           <code className="text-[10px] text-muted-foreground font-mono">
