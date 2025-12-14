@@ -62,6 +62,10 @@ A fully deployed live web application that lets users upload CMS documents and c
 - Node/Express API listens on `PORT` (default 4000) and serves the built React app plus the `/api/pipeline` endpoint
 - Python virtualenv is created inside the container to run `server/src/pipeline.py` 
 
+## Assumptions
+- Raw CMS `content_elements` may include images, tables, embeds, etc.; only `type === "text"` elements are extracted for embeddings.
+- Documents should include canonical metadata (IDs, URLs, publish dates) in expected fields; missing/invalid timestamps are skipped with warnings
+
 ## Technologies Used
 
 **Frontend is built with:**
@@ -92,10 +96,14 @@ A fully deployed live web application that lets users upload CMS documents and c
 - Expose a background job/queue for large uploads and progress tracking
 
 ## Design Decisions
-- **Text extraction:** Concatenate text content blocks and strip HTML tags for clean embeddings; trade-off: formatting/structure is lost for nested or rich markup
-- **In-memory cache on API:** API retains the last transformed docs for quick fetch; trade-off: state resets on restart and does not auto-sync with Qdrant
-- **Single container deploy:** Dockerfile builds the Vite frontend and serves it from Express for a single Render service; trade-off: frontend and API share a release cycle and image size increases
-- **Environment-driven behavior:** Embedding provider, skip/limit toggles, and Qdrant upload are controlled via env vars for flexibility; trade-off: misconfigured envs can cause silent skips or failures
+- **Text extraction:** Concatenate text content blocks and strip HTML tags for clean embeddings
+  - Trade-off: formatting/structure is lost for nested or rich markup
+- **In-memory cache on API:** API retains the last transformed docs for quick fetch
+  - Trade-off: state resets on restart and does not auto-sync with Qdrant
+- **Single container deploy:** Dockerfile builds the Vite frontend and serves it from Express for a single Render service
+  - Trade-off: frontend and API share a release cycle and image size increases
+- **Environment-driven behavior:** Embedding provider, skip/limit toggles, and Qdrant upload are controlled via env vars for flexibility
+  - Trade-off: misconfigured envs can cause silent skips or failures
 
 ## API Documentation
 
