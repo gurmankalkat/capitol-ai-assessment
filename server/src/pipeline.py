@@ -11,9 +11,13 @@ from bs4 import BeautifulSoup
 from qdrant_client import QdrantClient, models
 from openai import OpenAI
 from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
 
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+
+# Load environment variables from the repo-level .env so CLI runs pick up secrets
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 # Goal: if article text contains HTML, remove tags and keep the words
 def strip_html(raw: Optional[str]) -> str:
