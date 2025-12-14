@@ -1,8 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Header } from "@/components/dashboard/Header";
 import { StatsCard } from "@/components/dashboard/StatsCard";
 import { DocumentCard } from "@/components/dashboard/DocumentCard";
-import { EmbeddingVisualizer } from "@/components/dashboard/EmbeddingVisualizer";
 import { useDocuments } from "@/hooks/useDocuments";
 import { apiUrl } from "@/lib/api";
 import { QdrantDocument, PipelineStats } from "@/types/document";
@@ -22,8 +21,6 @@ import {
   Check
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-
-const DEFAULT_EMBEDDING_DIMENSION = 32;
 
 const toStringArray = (value: unknown): string[] => {
   if (!value) return [];
@@ -107,7 +104,7 @@ const cmsRecordToQdrant = (item: Record<string, unknown>, index: number): Qdrant
   const embedding =
     Array.isArray(embeddingCandidate) && embeddingCandidate.every((val) => typeof val === 'number')
       ? embeddingCandidate
-      : Array(DEFAULT_EMBEDDING_DIMENSION).fill(0);
+      : [];
 
   return {
     text,
@@ -152,6 +149,7 @@ const Index = () => {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(12);
 
   const activeDocuments = uploadedDocuments.length ? uploadedDocuments : documents;
   const activeStats = useMemo(() => {
@@ -167,6 +165,11 @@ const Index = () => {
     const matchesSection = !selectedSection || doc.metadata.sections.includes(selectedSection);
     return matchesSearch && matchesSection;
   });
+
+  useEffect(() => {
+    // Reset pagination when filters change or new docs arrive
+    setVisibleCount(12);
+  }, [searchQuery, selectedSection, activeDocuments]);
 
   const handleCmsUpload = async (file: File) => {
     try {
@@ -405,9 +408,7 @@ const Index = () => {
                       ? uploadedDocuments[0]?.embedding.length
                       : stats?.embeddingDimension || '—'}
                   </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Defaults to {DEFAULT_EMBEDDING_DIMENSION} if none provided
-                  </p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Uses provided embeddings only</p>
                 </div>
               </div>
 
@@ -496,14 +497,6 @@ const Index = () => {
           </section>
         )}
 
-        {/* Two column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
-          <div className="lg:col-span-2 space-y-6">
-            {/* Embedding visualizer */}
-            <EmbeddingVisualizer documents={activeDocuments} />
-          </div>
-        </div>
-
         {/* Documents Section */}
         <section>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
@@ -542,16 +535,19 @@ const Index = () => {
                 ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
                 : "space-y-4"
             }>
-              {filteredDocuments.slice(0, 12).map((doc, index) => (
+              {filteredDocuments.slice(0, visibleCount).map((doc, index) => (
                 <DocumentCard key={doc.metadata.external_id} document={doc} index={index} />
               ))}
             </div>
           )}
 
-          {filteredDocuments.length > 12 && (
+          {filteredDocuments.length > visibleCount && (
             <div className="mt-8 text-center">
-              <button className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors">
-                Load More ({filteredDocuments.length - 12} remaining)
+              <button
+                className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground font-medium text-sm hover:bg-primary/90 transition-colors"
+                onClick={() => setVisibleCount((prev) => prev + 12)}
+              >
+                Load More ({filteredDocuments.length - visibleCount} remaining)
               </button>
             </div>
           )}

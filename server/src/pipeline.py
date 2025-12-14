@@ -51,6 +51,7 @@ def dedupe_preserve(seq: Iterable[str]) -> List[str]:
     return ordered
 
 
+# Goal: assemble plain text from content elements by normalizing and joining text blocks
 def extract_text(content_elements: Optional[List[Dict[str, Any]]]) -> str:
     if not content_elements:
         return ""
@@ -77,6 +78,7 @@ def extract_text(content_elements: Optional[List[Dict[str, Any]]]) -> str:
     return combined
 
 
+# Goal: collect readable names from a list of taxonomy-like objects
 def collect_names(items: Iterable[Dict[str, Any]]) -> List[str]:
     names: List[str] = []
     for item in items:
@@ -88,6 +90,7 @@ def collect_names(items: Iterable[Dict[str, Any]]) -> List[str]:
     return names
 
 
+# Goal: build a fully qualified URL if possible from canonical fields
 def build_url(doc: Dict[str, Any]) -> Optional[str]:
     candidate = doc.get("canonical_url") or doc.get("website_url")
     website = doc.get("canonical_website") or doc.get("website")
@@ -100,6 +103,7 @@ def build_url(doc: Dict[str, Any]) -> Optional[str]:
     return candidate
 
 
+# Goal: extract and normalize metadata fields from the raw document
 def extract_metadata(doc: Dict[str, Any]) -> Dict[str, Any]:
     taxonomy = doc.get("taxonomy") or {}
     # Build sections, categories, tags
@@ -151,12 +155,14 @@ def extract_metadata(doc: Dict[str, Any]) -> Dict[str, Any]:
     return metadata
 
 
+# Goal: turn a raw CMS doc into the simplified text/metadata structure
 def transform_document(doc: Dict[str, Any]) -> Dict[str, Any]:
     text = extract_text(doc.get("content_elements"))
     metadata = extract_metadata(doc)
     return {"text": text, "metadata": metadata}
 
 
+# Goal: ensure required fields are present and embeddings match expected dimension
 def validate_output(doc: Dict[str, Any], embedding_dim: Optional[int] = None) -> None:
     if not isinstance(doc.get("text"), str) or not doc["text"].strip():
         raise ValueError("Invalid text field")
@@ -182,6 +188,7 @@ def validate_output(doc: Dict[str, Any], embedding_dim: Optional[int] = None) ->
             raise ValueError("Embedding dimension mismatch")
 
 
+# Goal: generate embeddings with SentenceTransformers and attach to docs
 def add_embeddings_sentence_transformers(docs: List[Dict[str, Any]], model_name: str) -> int:
     model = SentenceTransformer(model_name)
     dim = model.get_sentence_embedding_dimension()
@@ -193,6 +200,7 @@ def add_embeddings_sentence_transformers(docs: List[Dict[str, Any]], model_name:
     return dim
 
 
+# Goal: generate embeddings with OpenAI and attach to docs
 def add_embeddings_openai(docs: List[Dict[str, Any]], model_name: str, batch_size: int = 100) -> int:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -218,6 +226,7 @@ def add_embeddings_openai(docs: List[Dict[str, Any]], model_name: str, batch_siz
     return dim
 
 
+# Goal: push the enriched documents into Qdrant using configured collection
 def push_to_qdrant(docs: List[Dict[str, Any]], vector_size: int) -> None:
     """Upsert documents into a Qdrant collection using env configuration."""
     url = os.getenv("QDRANT_URL")
@@ -250,6 +259,7 @@ def push_to_qdrant(docs: List[Dict[str, Any]], vector_size: int) -> None:
     logging.info("Upserted %s vectors into Qdrant collection '%s'", len(points), collection)
 
 
+# Goal: orchestrate the full pipeline from raw input to embeddings and optional Qdrant push
 def run_pipeline(
     input_path: Path,
     output_path: Path,
@@ -292,6 +302,7 @@ def run_pipeline(
         push_to_qdrant(transformed, embedding_dim)
 
 
+# Goal: define CLI arguments for running the pipeline script
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Transform raw CMS data to Qdrant format.")
     parser.add_argument("--input", type=Path, default=Path("data/raw_customer_api.json"))

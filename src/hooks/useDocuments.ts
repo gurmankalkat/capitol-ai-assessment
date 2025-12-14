@@ -10,26 +10,13 @@ export function useDocuments() {
   useEffect(() => {
     async function fetchDocuments() {
       try {
-        // Prefer live API, fallback to bundled data for local preview
+        // Prefer live API; if it fails, surface the error so we don't show seeded data
         const response = await fetch(apiUrl('/api/documents'));
         if (!response.ok) throw new Error('Failed to fetch documents from API');
         const data = await response.json();
         setDocuments(data);
       } catch (err) {
-        try {
-          const fallback = await fetch('/data/qdrant_documents.json');
-          if (!fallback.ok) throw new Error('Failed to fetch local data');
-          const data = await fallback.json();
-          setDocuments(data);
-        } catch (fallbackErr) {
-          setError(
-            err instanceof Error
-              ? err.message
-              : fallbackErr instanceof Error
-                ? fallbackErr.message
-                : 'Unknown error'
-          );
-        }
+        setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
         setLoading(false);
       }

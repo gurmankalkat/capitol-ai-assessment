@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    env_file:
+      - server/.env
+    environment:
+      # Override or supply via host env as needed
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      QDRANT_URL: ${QDRANT_URL}
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-documents}
+      PIPELINE_PROVIDER: ${PIPELINE_PROVIDER:-openai}
+      PIPELINE_SKIP_EMBEDDINGS: ${PIPELINE_SKIP_EMBEDDINGS:-false}
+      PYTHON_BIN: /app/.venv/bin/python3
+    command: ["node", "dist/index.js"]
